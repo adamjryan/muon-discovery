@@ -1,0 +1,38 @@
+{
+    "type": "record",
+    "name": "ServiceDescriptorSer",
+    "fields": [
+        {
+            "name": "identifier",
+            "type": "string"
+        },
+        {
+            "name": "tags",
+            "type": {
+                "type": "array",
+                "items": "string"
+            }
+        },
+        {
+            "name": "codecs",
+            "type": {
+                "type": "array",
+                "items": "string"
+            }
+        },
+        {
+            "name": "connectionUris",
+            "type": {
+                "type": "array",
+                "items": "string"
+            }
+        },
+        {
+            "name": "capabilities",
+            "type": {
+                "type": "array",
+                "items": "string"
+            }
+        }
+    ]
+}

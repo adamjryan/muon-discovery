@@ -1,0 +1,3 @@
+rootProject.name = 'muon-discovery-java'
+include ':muon-discovery'
+project(':muon-discovery').projectDir = new File( settingsDir, '../muon-discovery' )

@@ -1,0 +1,75 @@
+apply plugin: 'java'
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+repositories {
+    mavenCentral()
+}
+
+sourceSets {
+    javaCpp
+    javaCppGen
+}
+
+dependencies {
+    javaCppCompile 'org.bytedeco:javacpp:1.3.2'
+    javaCppGenCompile configurations.javaCppCompile
+    javaCppGenCompile sourceSets.javaCpp.output
+    compile configurations.javaCppGenCompile
+    compile sourceSets.javaCppGen.output
+    compile 'com.google.code.gson:gson:2.3.1'
+    testCompile 'junit:junit:4.12'
+}
+
+task generateJniInterface( dependsOn: [ compileJavaCppJava, ':muon-discovery:mainSharedLibrary' ] ){
+    doLast {
+        ext.avroLibPath = new File( new File( (File)project.project(':muon-discovery').unpackAvroDist.destinationDir, (String)project.project(':muon-discovery').unpackAvroDist.distFolderName ), 'lib' ).path
+        javaexec {
+            main 'org.bytedeco.javacpp.tools.Builder'
+            classpath project.configurations.javaCppCompile.find( { it.name.startsWith("javacpp") } ).path
+            args = [
+                '-cp', compileJavaCppJava.destinationDir,
+                '-properties', 'linux-x86_64', //the properties flag must be placed before any -D properties as it refreshes the base properties and wipe's out any prior settings.
+                '-Dplatform.includepath='+project(':muon-discovery').compileMainSharedLibraryMainCpp.includes.asPath,
+                '-Dplatform.linkpath='+project(':muon-discovery').linkMainSharedLibrary.outputs.files.asPath+':'+avroLibPath.toString(),
+                '-Dplatform.resourcepath='+sourceSets.javaCpp.resources.sourceDirectories.asPath,
+                '-Dplatform.compiler=g++',
+                '-Xcompiler', '-std=c++14',
+                '-Xcompiler', '-pthread',
+                '-d', sourceSets.javaCppGen.java.sourceDirectories.asPath,
+                'io.muoncore.javacpp.*'
+            ]
+        }
+    }
+}
+
+compileJavaCppGenJava.dependsOn generateJniInterface
+
+task generateJniLib( dependsOn: compileJavaCppGenJava ){
+    doLast {
+        javaexec {
+            main 'org.bytedeco.javacpp.tools.Builder'
+            classpath project.configurations.javaCppCompile.find( { it.name.startsWith("javacpp") } ).path
+            args = [
+                '-cp', compileJavaCppJava.destinationDir.path+':'+compileJavaCppGenJava.destinationDir.path,
+                '-properties', 'linux-x86_64', //the properties flag must be placed before any -D properties as it refreshes the base properties and wipe's out any prior settings.
+                '-Dplatform.includepath='+project(':muon-discovery').compileMainSharedLibraryMainCpp.includes.asPath,
+                '-Dplatform.linkpath='+project(':muon-discovery').linkMainSharedLibrary.outputs.files.asPath+':'+generateJniInterface.avroLibPath.toString(),
+                '-Dplatform.resourcepath='+sourceSets.javaCpp.resources.sourceDirectories.asPath,
+                '-Dplatform.compiler=g++',
+                '-Xcompiler', '-std=c++14',
+                '-Xcompiler', '-pthread',
+                '-copylibs',
+                'io.muoncore.discovery.*'
+            ]
+        }
+    }
+}
+
+compileJava.dependsOn generateJniLib
+
+jar {
+    from sourceSets.javaCpp.output
+    from sourceSets.javaCppGen.output
+}

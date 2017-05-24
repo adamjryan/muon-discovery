@@ -1,0 +1,97 @@
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'org.apache.ant:ant:1.10.1'
+    }
+}
+plugins {
+    id "de.undercouch.download" version "3.2.0"
+}
+apply plugin: 'cpp'
+
+import de.undercouch.gradle.tasks.download.Download
+import org.apache.tools.tar.TarEntry
+import org.apache.tools.tar.TarInputStream
+import org.gradle.api.internal.file.FileResource
+import org.gradle.api.internal.file.MaybeCompressedFileResource
+import java.nio.file.Files
+
+model {
+    components {
+        main( NativeLibrarySpec ){
+            sources {
+               cpp {
+                    source {
+                        srcDir 'src/main/cpp'
+                        include '**/*.cpp'
+                    }
+                    exportedHeaders {
+                        srcDir 'src/main/header'
+                        srcDir 'src/main/header_gen'
+                        srcDir 'lib/avrocpp-1.8.2/include'
+                        include "**/*.h"
+                    }
+                }
+            }
+            binaries.all {
+                cppCompiler.args '-std=c++14'
+                cppCompiler.args '-pthread'
+                linker.args '-pthread'
+            }
+        }
+    }
+}
+
+task downloadAvro( type: Download ){
+    ext.avroVersion = '1.8.2'
+    ext.avroName = "avro-cpp-${avroVersion}"
+    ext.gzipName = "${avroName}.tar.gz"
+    src "http://www-eu.apache.org/dist/avro/stable/cpp/${gzipName}"
+    dest new File( temporaryDir, (String)gzipName ).path
+}
+
+task unpackAvro( type: Copy, dependsOn: downloadAvro ){
+    from tarTree(downloadAvro.dest)
+    into file('lib')
+}
+
+task buildAvroDist( dependsOn: unpackAvro ){
+    ext.buildDir = new File( new File( unpackAvro.destinationDir.path, (String)downloadAvro.avroName ), 'build' )
+    doLast{
+        buildDir.mkdir()
+        exec {
+            workingDir buildDir.path
+            commandLine 'cmake',  '-G', 'Unix Makefiles', '..'
+        }
+        exec {
+            workingDir buildDir.path
+            commandLine 'make', 'package'
+        }
+    }
+}
+
+task unpackAvroDist( type: Copy, dependsOn: buildAvroDist ){
+    ext.distFolderName = "avrocpp-${downloadAvro.avroVersion}"
+    File gzipFile = new File( (File)buildAvroDist.buildDir, (String)"${distFolderName}.tar.gz" )
+    from tarTree(gzipFile)
+    into file('lib')
+    eachFile {
+        TarInputStream tarInputStream = new TarInputStream(
+            new MaybeCompressedFileResource( new FileResource(gzipFile) ).read()
+        )
+        TarEntry tarEntry
+        while(  ( tarEntry = tarInputStream.getNextEntry() ) != null  ){
+            if( !tarEntry.directory && tarEntry.name == it.relativePath.pathString && tarEntry.symbolicLink ){
+                File destinationFile = new File( destinationDir, it.path )
+                if( destinationFile.exists() ) {
+                    destinationFile.delete()
+                }
+                Files.createSymbolicLink( new File( destinationDir, it.path ).toPath(), new File(tarEntry.linkName).toPath() )
+                it.exclude()
+            }
+        }
+        tarInputStream.close()
+    }
+}
